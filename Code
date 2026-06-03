@@ -1,0 +1,145 @@
+import pandas as pd
+import json
+from rdkit import Chem
+from tqdm import tqdm
+
+# ==========================================================
+# CONFIGURATION
+# ==========================================================
+
+INPUT_FILE = "data/raw/all_smiles.smi"
+
+CLEANED_OUTPUT = "data/processed/cleaned_smiles.csv"
+
+VOCAB_OUTPUT = "data/processed/vocab.json"
+
+MIN_LENGTH = 34
+MAX_LENGTH = 128
+
+# ==========================================================
+# VALIDATE SMILES
+# ==========================================================
+
+def is_valid_smiles(smiles):
+
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+
+        if mol is None:
+            return False
+
+        return True
+
+    except:
+        return False
+
+
+# ==========================================================
+# LOAD DATA
+# ==========================================================
+
+print("Loading SMILES...")
+
+with open(INPUT_FILE, "r") as f:
+
+    smiles_list = [line.strip() for line in f]
+
+print(f"Total molecules: {len(smiles_list)}")
+
+
+# ==========================================================
+# CLEAN DATASET
+# ==========================================================
+
+cleaned_smiles = []
+
+print("Cleaning molecules...")
+
+for smi in tqdm(smiles_list):
+
+    if not is_valid_smiles(smi):
+        continue
+
+    if len(smi) < MIN_LENGTH:
+        continue
+
+    if len(smi) > MAX_LENGTH:
+        continue
+
+    cleaned_smiles.append(smi)
+
+# ==========================================================
+# REMOVE DUPLICATES
+# ==========================================================
+
+cleaned_smiles = list(set(cleaned_smiles))
+
+print(f"Remaining molecules: {len(cleaned_smiles)}")
+
+# ==========================================================
+# SAVE DATASET
+# ==========================================================
+
+df = pd.DataFrame(
+    {
+        "smiles": cleaned_smiles
+    }
+)
+
+df.to_csv(
+    CLEANED_OUTPUT,
+    index=False
+)
+
+print(f"Saved cleaned dataset: {CLEANED_OUTPUT}")
+
+# ==========================================================
+# BUILD VOCABULARY
+# ==========================================================
+
+print("Building vocabulary...")
+
+chars = set()
+
+for smi in cleaned_smiles:
+
+    chars.update(list(smi))
+
+chars = sorted(list(chars))
+
+special_tokens = [
+    "<PAD>",
+    "<START>",
+    "<END>",
+    "<UNK>"
+]
+
+vocab = special_tokens + chars
+
+char_to_idx = {
+    c: i
+    for i, c in enumerate(vocab)
+}
+
+idx_to_char = {
+    i: c
+    for i, c in enumerate(vocab)
+}
+
+vocab_dict = {
+    "vocab_size": len(vocab),
+    "char_to_idx": char_to_idx,
+    "idx_to_char": idx_to_char
+}
+
+with open(VOCAB_OUTPUT, "w") as f:
+
+    json.dump(
+        vocab_dict,
+        f,
+        indent=4
+    )
+
+print(f"Vocabulary size: {len(vocab)}")
+
+print(f"Saved vocabulary: {VOCAB_OUTPUT}")
