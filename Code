@@ -1,0 +1,45 @@
+# AI-RBP-DrugDiscovery
+
+🚀 An end-to-end AI-driven drug discovery framework integrating molecular representation learning, de novo molecular generation, property prediction, protein-ligand interaction analysis, molecular docking, molecular dynamics simulations, MMGBSA calculations, and experimental validation for RNA-binding protein-targeted therapeutics.
+
+## Features
+
+* Transformer-based molecular generation
+* LSTM-based SMILES learning
+* Self-supervised molecular representation learning
+* Drug-likeness prediction
+* ADMET prediction
+* Molecular docking automation
+* Molecular dynamics simulations
+* MMGBSA binding energy calculations
+* Protein-ligand interaction analysis
+* Multi-target drug discovery
+* Translational validation framework
+
+## Hashtags
+
+#ArtificialIntelligence
+#DrugDiscovery
+#ComputationalBiology
+#Bioinformatics
+#DeepLearning
+#MachineLearning
+#GenerativeAI
+#Cheminformatics
+#MolecularModeling
+#MolecularDynamics
+#DrugDesign
+#PrecisionMedicine
+#RNABindingProteins
+#SystemsBiology
+#ComputationalPharmacology
+#TransformerModels
+#LSTM
+#PyTorch
+#RDKit
+#GROMACS
+#AutoDockVina
+#OpenScience
+#ResearchSoftware
+#LifeSciences
+#BiomedicalAI
