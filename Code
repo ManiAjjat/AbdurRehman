@@ -143,3 +143,401 @@ with open(VOCAB_OUTPUT, "w") as f:
 print(f"Vocabulary size: {len(vocab)}")
 
 print(f"Saved vocabulary: {VOCAB_OUTPUT}")
+
+import json
+import torch
+from torch.utils.data import Dataset
+
+
+class SmilesTokenizer:
+
+    def __init__(self, vocab_file):
+
+        with open(vocab_file, "r") as f:
+            vocab = json.load(f)
+
+        self.char_to_idx = vocab["char_to_idx"]
+
+        self.idx_to_char = {
+            int(k): v
+            for k, v in vocab["idx_to_char"].items()
+        }
+
+        self.vocab_size = vocab["vocab_size"]
+
+        self.pad_token = "<PAD>"
+        self.start_token = "<START>"
+        self.end_token = "<END>"
+        self.unk_token = "<UNK>"
+
+    # ------------------------------------------------
+    # Encode SMILES
+    # ------------------------------------------------
+
+    def encode(self, smiles):
+
+        tokens = [self.char_to_idx[self.start_token]]
+
+        for ch in smiles:
+
+            if ch in self.char_to_idx:
+
+                tokens.append(
+                    self.char_to_idx[ch]
+                )
+
+            else:
+
+                tokens.append(
+                    self.char_to_idx[self.unk_token]
+                )
+
+        tokens.append(
+            self.char_to_idx[self.end_token]
+        )
+
+        return tokens
+
+    # ------------------------------------------------
+    # Decode
+    # ------------------------------------------------
+
+    def decode(self, sequence):
+
+        chars = []
+
+        for idx in sequence:
+
+            char = self.idx_to_char.get(idx, "")
+
+            if char in [
+                self.start_token,
+                self.end_token,
+                self.pad_token
+            ]:
+                continue
+
+            chars.append(char)
+
+        return "".join(chars)
+
+    # ------------------------------------------------
+    # One-hot encoding
+    # ------------------------------------------------
+
+    def one_hot(self, token_ids):
+
+        return torch.nn.functional.one_hot(
+            torch.tensor(token_ids),
+            num_classes=self.vocab_size
+        ).float()
+preprocessing/smiles_dataset.py
+import pandas as pd
+import torch
+
+from torch.utils.data import Dataset
+
+from tokenizer import SmilesTokenizer
+
+
+class SmilesDataset(Dataset):
+
+    def __init__(
+        self,
+        csv_file,
+        vocab_file,
+        max_length=130
+    ):
+
+        self.df = pd.read_csv(csv_file)
+
+        self.tokenizer = SmilesTokenizer(
+            vocab_file
+        )
+
+        self.max_length = max_length
+
+    def __len__(self):
+
+        return len(self.df)
+
+    def __getitem__(self, idx):
+
+        smiles = self.df.iloc[idx]["smiles"]
+
+        encoded = self.tokenizer.encode(
+            smiles
+        )
+
+        # padding
+
+        if len(encoded) < self.max_length:
+
+            encoded += [0] * (
+                self.max_length -
+                len(encoded)
+            )
+
+        else:
+
+            encoded = encoded[
+                :self.max_length
+            ]
+
+        x = torch.tensor(
+            encoded[:-1],
+            dtype=torch.long
+        )
+
+        y = torch.tensor(
+            encoded[1:],
+            dtype=torch.long
+        )
+
+        return x, y
+from torch.utils.data import DataLoader
+
+from preprocessing.smiles_dataset import (
+    SmilesDataset
+)
+
+dataset = SmilesDataset(
+    csv_file="data/processed/cleaned_smiles.csv",
+    vocab_file="data/processed/vocab.json"
+)
+
+loader = DataLoader(
+    dataset,
+    batch_size=32,
+    shuffle=True
+)
+
+for x, y in loader:
+
+    print("Input Shape:", x.shape)
+    print("Target Shape:", y.shape)
+
+    break
+Input Smiles
+CC(=O)OC1=CC=CC=C1C(=O)O
+Encoded Sequence
+<START>
+C
+C
+(
+=
+O
+)
+O
+C
+1
+...
+<END>
+Integer Representation
+[1,12,12,5,8,15,6,15,12,20,...,2]
+One-Hot Representation
+[0,0,1,0,0,0,...]
+[0,0,0,1,0,0,...]
+...
+Training Pairs
+
+Input:
+<START> C C ( = O
+Target:
+C C ( = O )
+C C ( = O )
+models/lstm_chem.py
+import torch
+import torch.nn as nn
+
+
+class LSTMChem(nn.Module):
+
+    def __init__(
+        self,
+        vocab_size,
+        embedding_dim=256,
+        hidden_dim=512,
+        num_layers=3,
+        dropout=0.2
+    ):
+
+        super().__init__()
+
+        self.vocab_size = vocab_size
+
+        # Equation (1)
+        self.embedding = nn.Embedding(
+            num_embeddings=vocab_size,
+            embedding_dim=embedding_dim
+        )
+
+        self.lstm = nn.LSTM(
+            input_size=embedding_dim,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout
+        )
+
+        # Equation (9)
+        self.fc = nn.Linear(
+            hidden_dim,
+            vocab_size
+        )
+
+        self.dropout = nn.Dropout(
+            dropout
+        )
+
+    def forward(
+        self,
+        x,
+        hidden=None
+    ):
+
+        # Equation (1)
+        x = self.embedding(x)
+
+        output, hidden = self.lstm(
+            x,
+            hidden
+        )
+
+        output = self.dropout(
+            output
+        )
+
+        logits = self.fc(
+            output
+        )
+
+        return logits, hidden
+Model Summary
+from models.lstm_chem import LSTMChem
+
+model = LSTMChem(
+    vocab_size=60,
+    embedding_dim=256,
+    hidden_dim=512,
+    num_layers=3
+)
+
+print(model)
+LSTMChem(
+  Embedding(60,256)
+  LSTM(256,512,num_layers=3)
+  Linear(512,60)
+)
+implemented as Cross Entropy.
+import torch.nn as nn
+
+
+def get_loss():
+
+    criterion = nn.CrossEntropyLoss()
+
+    return criterion
+import torch
+
+from models.lstm_chem import LSTMChem
+
+
+BATCH_SIZE = 8
+SEQ_LEN = 128
+VOCAB_SIZE = 60
+
+x = torch.randint(
+    0,
+    VOCAB_SIZE,
+    (BATCH_SIZE, SEQ_LEN)
+)
+
+model = LSTMChem(
+    vocab_size=VOCAB_SIZE
+)
+
+logits, hidden = model(x)
+
+print(
+    logits.shape
+)
+Sampling Function
+import torch
+import torch.nn.functional as F
+
+
+def sample_smiles(
+    model,
+    start_token,
+    end_token,
+    max_length=128,
+    temperature=1.0,
+    device="cuda"
+):
+
+    model.eval()
+
+    current = torch.tensor(
+        [[start_token]],
+        device=device
+    )
+
+    hidden = None
+
+    generated = []
+
+    with torch.no_grad():
+
+        for _ in range(max_length):
+
+            logits, hidden = model(
+                current,
+                hidden
+            )
+
+            logits = (
+                logits[:, -1, :]
+                / temperature
+            )
+
+            probs = F.softmax(
+                logits,
+                dim=-1
+            )
+
+            next_token = torch.multinomial(
+                probs,
+                1
+            )
+
+            token = next_token.item()
+
+            if token == end_token:
+                break
+
+            generated.append(
+                token
+            )
+
+            current = next_token
+
+    return generated
+Parameter Configuration
+VOCAB_SIZE = 60
+
+EMBED_DIM = 256
+
+HIDDEN_DIM = 512
+
+NUM_LAYERS = 3
+
+DROPOUT = 0.2
+
+BATCH_SIZE = 256
+
+LEARNING_RATE = 0.001
+
+MAX_LENGTH = 128
+
+EPOCHS = 50
